@@ -1,0 +1,5 @@
+CAPNPROTO_BASENAME="capnproto-c++-0.9.0"
+CAPNPROTO_TGZ="$CAPNPROTO_BASENAME".tar.gz
+CAPNPROTO_SHA256="/opt/app/.sandstorm/downloads/$CAPNPROTO_TGZ.sha256"
+CAPNPROTO_URL="https://capnproto.org/$CAPNPROTO_TGZ"
+CURL="curl --proto =https --tlsv1.2 -sSf"
