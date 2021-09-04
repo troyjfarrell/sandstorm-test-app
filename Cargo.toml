@@ -1,6 +1,10 @@
+[[bin]]
+name = "test-app"
+path = "src/main.rs"
+
 [dependencies]
 
 [package]
 name = "sandstorm-test-app"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2018"
