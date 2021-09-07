@@ -127,7 +127,7 @@ mod uiviewimpl {
 
 pub mod websessionimpl {
     pub struct WebSessionImpl {
-        _is_powerbox_request: bool,
+        is_powerbox_request: bool,
         _session_context: sandstorm::grain_capnp::session_context::Client,
         _api:
             sandstorm::grain_capnp::sandstorm_api::Client<crate::test_app_capnp::object_id::Owned>,
@@ -144,7 +144,7 @@ pub mod websessionimpl {
             is_powerbox_request: bool,
         ) -> capnp::Result<WebSessionImpl> {
             Ok(WebSessionImpl {
-                _is_powerbox_request: is_powerbox_request,
+                is_powerbox_request,
                 _session_context: context,
                 _api: api,
             })
@@ -154,13 +154,26 @@ pub mod websessionimpl {
     impl sandstorm::web_session_capnp::web_session::Server for WebSessionImpl {
         fn get(
             &mut self,
-            _params: sandstorm::web_session_capnp::web_session::GetParams,
+            params: sandstorm::web_session_capnp::web_session::GetParams,
             mut results: sandstorm::web_session_capnp::web_session::GetResults,
         ) -> capnp::capability::Promise<(), capnp::Error> {
-            let mut response = results.get().init_content();
-            response.set_mime_type("text/plain");
-            response.init_body().set_bytes("Hello\n".as_bytes());
+            let path = pry!(pry!(params.get()).get_path());
 
+            if path.is_empty() {
+                let mut response = results.get().init_content();
+                response.set_mime_type("text/html");
+                response
+                    .init_body()
+                    .set_bytes(match self.is_powerbox_request {
+                        true => crate::test_app_capnp::TEST_POWERBOX_HTML,
+                        false => crate::test_app_capnp::TEST_APP_HTML,
+                    });
+            } else {
+                let mut error = results.get().init_client_error();
+                error.set_status_code(
+                    sandstorm::web_session_capnp::web_session::response::ClientErrorCode::NotFound,
+                );
+            }
             capnp::capability::Promise::ok(())
         }
     }
