@@ -2,9 +2,25 @@
 name = "test-app"
 path = "src/main.rs"
 
+[build-dependencies]
+capnpc = "0.14"
+
 [dependencies]
+capnp = "0.14"
+capnp-rpc = "0.14"
+futures = "0.3"
+sandstorm = "0.0.15"
+
+[dependencies.tokio]
+version = "1.1.0"
+features = ["macros", "net", "rt"]
+
+[dependencies.tokio-util]
+version = "0.6.7"
+features = ["compat"]
 
 [package]
+build = "build.rs"
 name = "sandstorm-test-app"
 version = "0.0.0"
 edition = "2018"

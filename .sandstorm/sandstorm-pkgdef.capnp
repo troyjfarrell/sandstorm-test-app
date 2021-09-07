@@ -14,18 +14,22 @@ const pkgdef :Spk.PackageDefinition = (
     actions = [
       ( title = (defaultText = "New Test App Instance"),
         nounPhrase = (defaultText = "instance"),
-        command = (argv = ["/opt/app/test-app"])
+        command = (argv = ["/test-app"])
       )
     ],
 
-    continueCommand = (argv = ["/opt/app/test-app"])
+    continueCommand = (argv = ["/test-app"])
   ),
 
   sourceMap = (
     searchPath = [
       ( packagePath = "test-app", sourcePath = "../target/debug/test-app" ),
+      ( sourcePath = "/",
+        hidePaths = [ "home", "proc", "sys",
+                      "etc/passwd", "etc/hosts", "etc/host.conf",
+                      "etc/nsswitch.conf", "etc/resolv.conf" ]
+      )
     ]
   ),
-
-  alwaysInclude = [ "test-app", "sandstorm-manifest" ]
+  fileList = "sandstorm-files.list",
 );
