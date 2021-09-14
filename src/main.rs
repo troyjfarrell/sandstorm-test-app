@@ -53,6 +53,58 @@ pub mod test_app_capnp {
     include!(concat!(env!("OUT_DIR"), "/test_app_capnp.rs"));
 }
 
+mod testpowerboxcapimpl {
+    pub struct TestPowerboxCapImpl {
+        text: String,
+    }
+
+    impl TestPowerboxCapImpl {
+        pub fn new(text: &str) -> TestPowerboxCapImpl {
+            TestPowerboxCapImpl {
+                text: text.to_string(),
+            }
+        }
+    }
+
+    impl crate::test_app_capnp::test_powerbox_cap::Server for TestPowerboxCapImpl {
+        fn read(
+            &mut self,
+            _params: crate::test_app_capnp::test_powerbox_cap::ReadParams,
+            mut results: crate::test_app_capnp::test_powerbox_cap::ReadResults,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            results.get().set_text(&self.text);
+
+            capnp::capability::Promise::ok(())
+        }
+    }
+
+    impl crate::grain_capnp::app_persistent::Server<crate::test_app_capnp::object_id::Owned>
+        for TestPowerboxCapImpl
+    {
+        fn save(
+            &mut self,
+            _: crate::grain_capnp::app_persistent::SaveParams<
+                crate::test_app_capnp::object_id::Owned,
+            >,
+            mut results: crate::grain_capnp::app_persistent::SaveResults<
+                crate::test_app_capnp::object_id::Owned,
+            >,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let mut results_builder = results.get();
+            results_builder
+                .reborrow()
+                .init_object_id()
+                .set_text(&self.text);
+            results_builder
+                .reborrow()
+                .init_label()
+                .set_default_text("some label");
+
+            capnp::capability::Promise::ok(())
+        }
+    }
+}
+
 mod uiviewimpl {
     pub struct UiViewImpl {
         api: sandstorm::grain_capnp::sandstorm_api::Client<crate::test_app_capnp::object_id::Owned>,
@@ -122,13 +174,46 @@ mod uiviewimpl {
                 });
             capnp::capability::Promise::ok(())
         }
+
+        fn new_request_session(
+            &mut self,
+            params: sandstorm::grain_capnp::ui_view::NewRequestSessionParams,
+            mut results: sandstorm::grain_capnp::ui_view::NewRequestSessionResults,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            use capnp::traits::HasTypeId;
+
+            let params = pry!(params.get());
+            if params.get_session_type()
+                != sandstorm::web_session_capnp::web_session::Client::type_id()
+            {
+                return capnp::capability::Promise::err(capnp::Error::failed(
+                    "Unsupported session type.".to_string(),
+                ));
+            }
+
+            let session = pry!(crate::websessionimpl::WebSessionImpl::new(
+                pry!(params.get_user_info()),
+                pry!(params.get_context()),
+                pry!(params.get_session_params().get_as()),
+                self.api.clone(),
+                true,
+            ));
+            let client: sandstorm::web_session_capnp::web_session::Client =
+                capnp_rpc::new_client(session);
+            results
+                .get()
+                .set_session(sandstorm::grain_capnp::ui_session::Client {
+                    client: client.client,
+                });
+            capnp::capability::Promise::ok(())
+        }
     }
 }
 
 pub mod websessionimpl {
     pub struct WebSessionImpl {
         is_powerbox_request: bool,
-        _session_context: sandstorm::grain_capnp::session_context::Client,
+        session_context: sandstorm::grain_capnp::session_context::Client,
         _api:
             sandstorm::grain_capnp::sandstorm_api::Client<crate::test_app_capnp::object_id::Owned>,
     }
@@ -145,7 +230,7 @@ pub mod websessionimpl {
         ) -> capnp::Result<WebSessionImpl> {
             Ok(WebSessionImpl {
                 is_powerbox_request,
-                _session_context: context,
+                session_context: context,
                 _api: api,
             })
         }
@@ -173,6 +258,59 @@ pub mod websessionimpl {
                 error.set_status_code(
                     sandstorm::web_session_capnp::web_session::response::ClientErrorCode::NotFound,
                 );
+            }
+            capnp::capability::Promise::ok(())
+        }
+        fn post(
+            &mut self,
+            params: sandstorm::web_session_capnp::web_session::PostParams,
+            mut results: sandstorm::web_session_capnp::web_session::PostResults,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            // For promise.map_ok()
+            use futures::TryFutureExt;
+
+            let params_reader = pry!(params.get());
+            let path = pry!(params_reader.get_path());
+
+            if path == "fulfill" {
+                results.get().init_no_content();
+
+                let mut req = self.session_context.fulfill_request_request();
+                let text = pry!(std::str::from_utf8(pry!(
+                    pry!(params_reader.get_content()).get_content()
+                )));
+                let client: crate::test_app_capnp::test_powerbox_cap::Client =
+                    capnp_rpc::new_client(crate::testpowerboxcapimpl::TestPowerboxCapImpl::new(
+                        text,
+                    ));
+                req.get().get_cap().set_as_capability(client.client.hook);
+
+                // The next section of code exists because I haven't figured out how to get the
+                // Sandstorm Cap'n Proto files to map to the sandstorm crate.
+                // Can't set pry!(crate::test_app_capnp::TEST_DESC.get())
+                //                req.get().set_descriptor(pry!(crate::test_app_capnp::TEST_DESC.get()));
+                let mut test_desc_builder = capnp::message::Builder::new_default();
+                let mut test_desc = test_desc_builder
+                    .init_root::<sandstorm::powerbox_capnp::powerbox_descriptor::Builder>(
+                );
+                let tags = test_desc.reborrow().init_tags(1);
+                let mut tag = tags.get(0);
+                tag.set_id(
+                    pry!(pry!(crate::test_app_capnp::TEST_DESC.get()).get_tags())
+                        .get(0)
+                        .get_id(),
+                );
+                pry!(tag
+                    .get_value()
+                    .set_as::<crate::test_app_capnp::test_powerbox_cap::powerbox_tag::Reader>(
+                        pry!(crate::test_app_capnp::TEST_TAG.get())
+                    ));
+                pry!(req.get().set_descriptor(test_desc.into_reader()));
+                //                req.get().set_descriptor(pry!(crate::test_app_capnp::TEST_DESC.get()));
+
+                return capnp::capability::Promise::from_future(req.send().promise.map_ok(|_| ()));
+            } else if path == "accept" {
+                return capnp::capability::Promise::ok(());
             }
             capnp::capability::Promise::ok(())
         }
